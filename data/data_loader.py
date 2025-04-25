@@ -124,6 +124,7 @@ def loader(mode,sslmode,train,batch_size,num_workers,image_size,cutout_pr,cutout
     train_mask_path = sorted(glob(train_mask_path+maskext))
     test_im_path    = sorted(glob(test_im_path+imageext))
     test_mask_path  = sorted(glob(test_mask_path+maskext))
+    print(train_im_path)
 
     transformations = data_transform()
 

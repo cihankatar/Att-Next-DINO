@@ -31,8 +31,8 @@ def setup_paths(data):
     }
     folder = folder_mapping.get(data)
     base_path = os.environ["ML_DATA_OUTPUT"] if torch.cuda.is_available() else os.environ["ML_DATA_OUTPUT_LOCAL"]
+    print(base_path)
     return os.path.join(base_path, folder)
-
 
 @torch.no_grad()
 def update_teacher(student, teacher, momentum=0.996):
