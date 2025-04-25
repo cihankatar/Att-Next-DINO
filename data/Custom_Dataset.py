@@ -6,7 +6,7 @@ from torch.utils.data import Dataset
 
 
 class dataset(Dataset):
-    def __init__(self,train_path,mask_path,cutout_pr,cutout_box,aug,transforms,training_type): #
+    def __init__(self,train_path,mask_path,cutout_pr,cutout_box,transforms,training_type): #
         super().__init__()
         self.train_path      = train_path
         self.mask_path       = mask_path
@@ -14,7 +14,6 @@ class dataset(Dataset):
         self.cutout_pr=cutout_pr
         self.cutout_pad=cutout_box
         self.training_type = training_type
-        self.aug = aug
 
     def __len__(self):
          return len(self.train_path)

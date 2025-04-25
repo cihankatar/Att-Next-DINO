@@ -86,7 +86,7 @@ class DinoDataTransform(object):
 
 """
 
-def loader(mode,sslmode,train,batch_size,num_workers,image_size,cutout_pr,cutout_box,aug,shuffle,split_ratio,data):
+def loader(mode,sslmode,train,batch_size,num_workers,image_size,cutout_pr,cutout_box,shuffle,split_ratio,data):
     
     if data=='isic_2018_1':
         foldernamepath="isic_2018_1/"
@@ -130,15 +130,15 @@ def loader(mode,sslmode,train,batch_size,num_workers,image_size,cutout_pr,cutout
 
     if torch.cuda.is_available():
         if train:
-            data_train  = dataset(train_im_path,train_mask_path,cutout_pr,cutout_box, aug, transformations,mode)
+            data_train  = dataset(train_im_path,train_mask_path,cutout_pr,cutout_box, transformations,mode)
         else:
-            data_test   = dataset(test_im_path, test_mask_path,cutout_pr,cutout_box, aug, transformations,mode)
+            data_test   = dataset(test_im_path, test_mask_path,cutout_pr,cutout_box, transformations,mode)
 
     elif train:  #train for debug in local
-        data_train  = dataset(train_im_path[10:20],train_mask_path[10:20],cutout_pr,cutout_box, aug, transformations,mode)
+        data_train  = dataset(train_im_path[10:20],train_mask_path[10:20],cutout_pr,cutout_box, transformations,mode)
 
     else:
-        data_test   = dataset(test_im_path[10:20], test_mask_path[10:20],cutout_pr,cutout_box, aug, transformations,mode)
+        data_test   = dataset(test_im_path[10:20], test_mask_path[10:20],cutout_pr,cutout_box, transformations,mode)
 
     if train:
         train_loader = DataLoader(

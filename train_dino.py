@@ -57,16 +57,14 @@ def main():
     
     
     # Data Loaders
-    def create_loader(aug,train):
+    def create_loader(train):
         return loader(args.mode, args.sslmode_modelname, train, args.bsize, args.workers,
-                      args.imsize, args.cutoutpr, args.cutoutbox, aug, args.shuffle, args.sratio, data)
+                      args.imsize, args.cutoutpr, args.cutoutbox, args.shuffle, args.sratio, data)
 
-    train_loader = create_loader(args.aug,args.train)
+    train_loader = create_loader(args.train)
     
-    args.aug=False
     args.train=False
-    val_loader   = create_loader(args.aug,args.train)
-    args.aug=True
+    val_loader   = create_loader(args.train)
     args.train=True
 
     # Student & Teacher modeli
