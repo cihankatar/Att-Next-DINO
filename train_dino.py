@@ -44,32 +44,30 @@ def update_teacher(student, teacher, momentum=0.996):
 def main():
     # Configuration and Initial Setup
     
-    data, training_mode, train = 'isic_2018_1', "ssl", True
+    data, training_mode, op = 'isic_2018_1', "ssl", "train"
 
     best_valid_loss = float("inf")
     device      = using_device()
     folder_path = setup_paths(data)
-    args, res   = parser_init("segmentation task", "training", training_mode, train)
-    res = " ".join(res)
-    res = "["+res+"]"
+    args, res   = parser_init("segmentation task", op, training_mode)
+    res         = " ".join(res)
+    res         = "["+res+"]"
 
     config      = wandb_init(os.environ["WANDB_API_KEY"], os.environ["WANDB_DIR"], args, data)
     
     
     # Data Loaders
-    def create_loader(train):
-        return loader(args.mode, args.sslmode_modelname, train, args.bsize, args.workers,
+    def create_loader(operation):
+        return loader(operation,args.mode, args.sslmode_modelname, args.bsize, args.workers,
                       args.imsize, args.cutoutpr, args.cutoutbox, args.shuffle, args.sratio, data)
 
-    train_loader = create_loader(args.train)
-    
-    args.train=False
-    val_loader   = create_loader(args.train)
-    args.train=True
+    train_loader = create_loader(args.op)
+    args.op="validation"
+    val_loader   = create_loader(args.op)
+    args.op="train"
 
     # Student & Teacher modeli
     model   = model_dice_bce().to(device)
-
     student = model.encoder
     teacher = copy.deepcopy(student)
     teacher.load_state_dict(student.state_dict())
@@ -152,10 +150,10 @@ def main():
                     # Optionally log sample images to wandb
                     if num_batches == 1:  # just log the first batch to reduce clutter
                         wandb.log({
-                            "Val Sample - Input x": [wandb.Image(student_augs[i]) for i in range(min(2, student_augs.shape[0]))],
-                            "Val Sample - Input y": [wandb.Image(teacher_augs[i]) for i in range(min(2, teacher_augs.shape[0]))],
-                            "Val Sample - Student Output ": wandb.Image(student_out[1][1]),
-                            "Val Sample - Teacher Output ": wandb.Image(teacher_out[1][1])
+                            "Val Sample - Input x": [wandb.Image(student_augs[i]) for i in range(min(2, student_augs[0].shape[0]))],
+                            "Val Sample - Input y": [wandb.Image(teacher_augs[i]) for i in range(min(2, teacher_augs[0].shape[0]))],
+                            "Val Sample - Student Output ": wandb.Image(student_out[1][1][1]),
+                            "Val Sample - Teacher Output ": wandb.Image(teacher_out[1][1][1])
                         })
 
         if not training:

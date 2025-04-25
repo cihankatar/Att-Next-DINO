@@ -86,8 +86,8 @@ class DinoDataTransform(object):
 
 """
 
-def loader(mode,sslmode,train,batch_size,num_workers,image_size,cutout_pr,cutout_box,shuffle,split_ratio,data):
-    
+def loader(op,mode,sslmode,batch_size,num_workers,image_size,cutout_pr,cutout_box,shuffle,split_ratio,data):
+
     if data=='isic_2018_1':
         foldernamepath="isic_2018_1/"
         imageext="/*.jpg"
@@ -109,38 +109,40 @@ def loader(mode,sslmode,train,batch_size,num_workers,image_size,cutout_pr,cutout
         imageext="/*.jpg"
         maskext="/*.png"
 
-    train_im_path   = os.environ["ML_DATA_ROOT"]+foldernamepath+"train/images"   
-    train_mask_path = os.environ["ML_DATA_ROOT"]+foldernamepath+"train/masks"
+    if op =="train":
+        train_im_path   = os.environ["ML_DATA_ROOT"]+foldernamepath+"train/images"   
+        train_mask_path = os.environ["ML_DATA_ROOT"]+foldernamepath+"train/masks"
+        
+        train_im_path   = sorted(glob(train_im_path+imageext))
+        train_mask_path = sorted(glob(train_mask_path+maskext))
     
-    if train:
+    elif op == "validation":
         test_im_path    = os.environ["ML_DATA_ROOT"]+foldernamepath+"val/images"
         test_mask_path  = os.environ["ML_DATA_ROOT"]+foldernamepath+"val/masks"
+        test_im_path    = sorted(glob(test_im_path+imageext))
+        test_mask_path  = sorted(glob(test_mask_path+maskext))
+
     else :
         test_im_path    = os.environ["ML_DATA_ROOT"]+foldernamepath+"test/images"
         test_mask_path  = os.environ["ML_DATA_ROOT"]+foldernamepath+"test/masks"
-
-
-    train_im_path   = sorted(glob(train_im_path+imageext))
-    train_mask_path = sorted(glob(train_mask_path+maskext))
-    test_im_path    = sorted(glob(test_im_path+imageext))
-    test_mask_path  = sorted(glob(test_mask_path+maskext))
-    print(train_im_path)
+        test_im_path    = sorted(glob(test_im_path+imageext))
+        test_mask_path  = sorted(glob(test_mask_path+maskext))
 
     transformations = data_transform()
 
     if torch.cuda.is_available():
-        if train:
+        if op == "train":
             data_train  = dataset(train_im_path,train_mask_path,cutout_pr,cutout_box, transformations,mode)
         else:
             data_test   = dataset(test_im_path, test_mask_path,cutout_pr,cutout_box, transformations,mode)
 
-    elif train:  #train for debug in local
+    elif op == "train":  #train for debug in local
         data_train  = dataset(train_im_path[10:20],train_mask_path[10:20],cutout_pr,cutout_box, transformations,mode)
 
-    else:
+    else:  #test in local
         data_test   = dataset(test_im_path[10:20], test_mask_path[10:20],cutout_pr,cutout_box, transformations,mode)
 
-    if train:
+    if op == "train":
         train_loader = DataLoader(
             dataset     = data_train,
             batch_size  = batch_size,
@@ -157,7 +159,7 @@ def loader(mode,sslmode,train,batch_size,num_workers,image_size,cutout_pr,cutout
             num_workers = num_workers,
         )
     
-    return test_loader
+        return test_loader
 
 
 #loader()

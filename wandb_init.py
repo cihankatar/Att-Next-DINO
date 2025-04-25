@@ -74,16 +74,13 @@ def config_func(training_mode):
 
     return configs
     
-def parser_init(name,desc,
-                training_mode=None,
-                train=None):
-    
-    parser = argparse.ArgumentParser(
-        prog=name,
-        description=desc )
+def parser_init(name, op, training_mode=None):
+
+    parser = argparse.ArgumentParser(prog=name, description=op)
     
     configs=config_func(training_mode)
 
+    parser.add_argument("-t", "--op",               type=str,default=op)
     parser.add_argument("-m", "--mode",             type=str,default=configs["mode"])   
     parser.add_argument("-y", "--sslmode_modelname",type=str,default=configs["sslmode_modelname"])
     parser.add_argument("-p", "--imnetpr",          type=parse_bool,default=configs["imnetpr"])
@@ -99,14 +96,12 @@ def parser_init(name,desc,
     parser.add_argument("-c", "--cutoutbox",        type=float,default=configs["cutoutbox"])
     parser.add_argument("-x", "--cutmixpr",         type=float,default=configs["cutmixpr"])
     parser.add_argument("-n", "--noclasses",        type=int,default=configs["noclasses"])
-    parser.add_argument("-t", "--train",            type=parse_bool,default=train)
 
     args=parser.parse_args()
     args_key=[]
     args_value=[]
     res=[]
 
-    
     for key,value in parser.parse_args()._get_kwargs():
         if args.mode == "supervised":
             if key=='sratio'or key=='sslmode_modelname'or key=='train'or key=='noclasses' or key=='workers' or key=='mode':
@@ -121,28 +116,28 @@ def parser_init(name,desc,
     return args,res
 
 def wandb_init (WANDB_API_KEY,WANDB_DIR,args,data):
+    
+    op                  = args.op
+    training_mode       = args.mode
+    ssl_mode_modelname  = args.sslmode_modelname
+    imnetpr             = args.imnetpr
+    batch_size          = args.bsize 
+    epochs              = args.epochs
+    image_size          = args.imsize
+    augmentation        = args.aug
+    learningrate        = args.lrate
+    n_classes           = args.noclasses
+    split_ratio         = args.sratio
+    shuffle             = args.shuffle
+    cutout_pr           = args.cutoutpr
+    box_size            = args.cutoutbox
+    cutmixpr            = args.cutmixpr
+    workers             = args.workers
 
-    training_mode   = args.mode
-    ssl_mode_modelname = args.sslmode_modelname
-    train           = args.train
-    imnetpr         = args.imnetpr
-    batch_size      = args.bsize 
-    epochs          = args.epochs
-    image_size      = args.imsize
-    augmentation    = args.aug
-    learningrate    = args.lrate
-    n_classes       = args.noclasses
-    split_ratio     = args.sratio
-    shuffle         = args.shuffle
-    cutout_pr       = args.cutoutpr
-    box_size        = args.cutoutbox
-    cutmixpr        = args.cutmixpr
-    workers         = args.workers
-
-    print(f'Taining Configs:\ntrain:{train}\ntraining_mode:{training_mode}\nssl_mode_modelname:{ssl_mode_modelname}\nimagenetpretrained:{imnetpr} \nbatch_size:{batch_size}, \nepochs:{epochs}, \nimagesize:{image_size}, \naugmentation:{augmentation}, \nl_r:{learningrate}, \nn_classes:{n_classes}, \nshuffle:{shuffle}, \ncutout_pr:{cutout_pr}, \ncutout_box_size:{box_size},\ncutmixpr:{cutmixpr}, \nworkers:{workers},\nsplit_ratio:{split_ratio}')
+    print(f'Taining Configs:\noperation:{op}\ntraining_mode:{training_mode}\nssl_mode_modelname:{ssl_mode_modelname}\nimagenetpretrained:{imnetpr} \nbatch_size:{batch_size}, \nepochs:{epochs}, \nimagesize:{image_size}, \naugmentation:{augmentation}, \nl_r:{learningrate}, \nn_classes:{n_classes}, \nshuffle:{shuffle}, \ncutout_pr:{cutout_pr}, \ncutout_box_size:{box_size},\ncutmixpr:{cutmixpr}, \nworkers:{workers},\nsplit_ratio:{split_ratio}')
 
     wandb.login(key=WANDB_API_KEY)
-    if train: 
+    if op == "train": 
 
         if torch.cuda.is_available():
             project_name = "Att-Next-SSL"
@@ -154,44 +149,25 @@ def wandb_init (WANDB_API_KEY,WANDB_DIR,args,data):
         project_name = data+"AAtt-Next-SSL_Test"
 
                 
-    wandb.init(
-        project=project_name,
-        dir=WANDB_DIR,
+    wandb.init(project=project_name, dir=WANDB_DIR,
         config={
-            "training_mode"  : training_mode,
+            "operation"       : op,
+            "training_mode"   : training_mode,
             "ssl_mode_modelnm": ssl_mode_modelname,
-            "train"          : train,
-            "imnetpretrained": imnetpr,
-            "epochs"         : epochs,
-            "batch_size"     : batch_size,
-            "learningrate"   : learningrate,
-            "n_classes"      : n_classes,
-            "split_ratio"    : split_ratio,
-            "num_workers"    : workers,
-            "image_size"     : image_size,
-            "cutmix_pr"      : cutmixpr,
-            "cutout_pram"    : [cutout_pr,box_size],
-            "augmentation"   : augmentation,
-            "shuffle"        : shuffle,
+            "imnetpretrained" : imnetpr,
+            "epochs"          : epochs,
+            "batch_size"      : batch_size,
+            "learningrate"    : learningrate,
+            "n_classes"       : n_classes,
+            "split_ratio"     : split_ratio,
+            "num_workers"     : workers,
+            "image_size"      : image_size,
+            "cutmix_pr"       : cutmixpr,
+            "cutout_pram"     : [cutout_pr,box_size],
+            "augmentation"    : augmentation,
+            "shuffle"         : shuffle,
             })
 
     config = wandb.config
 
     return config
-
-def log_image_table(im_test, prediction, labels, batch_size):
-    #rand_idx=np.random.randint(batch_size)
-    rand_idx=3
-    prediction    = prediction[rand_idx]        ## (1, 512, 512)
-    prediction    = np.squeeze(prediction)     ## (512, 512)
-    prediction    = prediction > 0.5
-    prediction    = np.array(prediction, dtype=np.uint8)
-    prediction    = np.transpose(prediction)
-    im_test       = np.array(im_test[rand_idx]*255,dtype=int)
-    im_test       = np.transpose(im_test, (2,1,0))
-    im_test       = np.squeeze(im_test)     ## (512, 512)
-    label_test    = np.array(labels[rand_idx]*255,dtype=int)
-    label_test    = np.transpose(label_test)
-    label_test    = np.squeeze(label_test)     ## (512, 512)
-
-    return im_test,prediction,label_test
