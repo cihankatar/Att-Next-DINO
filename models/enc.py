@@ -32,23 +32,6 @@ class LayerNormGeneral(nn.Module):
         return x
 
 
-class LayerNormWithoutBias(nn.Module):
-    """
-    Equal to partial(LayerNormGeneral, bias=False) but faster, 
-    because it directly utilizes otpimized F.layer_norm
-    """
-    def __init__(self, normalized_shape, eps=1e-5, **kwargs):
-        super().__init__()
-        self.eps = eps
-        self.bias = None
-        if isinstance(normalized_shape, int):
-            normalized_shape = (normalized_shape,)
-        self.weight = nn.Parameter(torch.ones(normalized_shape))
-        self.normalized_shape = normalized_shape
-    def forward(self, x):
-        return F.layer_norm(x, self.normalized_shape, weight=self.weight, bias=self.bias, eps=self.eps)
-
-
 class Mlp(nn.Module):
     """ MLP as used in MetaFormer models, eg Transformer, MLP-Mixer, PoolFormer, MetaFormer baslines and related networks.
     Mostly copied from timm.
@@ -278,8 +261,6 @@ class Downsampling(nn.Module):
         x = self.down(x)
 
         return x
-
-#delete norm activate pre norm
         
 
 DOWNSAMPLE_LAYERS_FOUR_STAGES = [partial(Downsampling,
@@ -297,7 +278,6 @@ class EncoderBlock(nn.Module):
                  cblock=ConvBlock,
                  #norm_layer=nn.LayerNorm,
                  drop=0., drop_path=0.,
-                 layer_scale_init_value=None, res_scale_init_value=None
                  ):
 
         super().__init__()
@@ -332,58 +312,31 @@ class Encoder(nn.Module):
                  dims=[64, 128, 256, 512],
                  downsample_layers=DOWNSAMPLE_LAYERS_FOUR_STAGES,
                  token_mixers=nn.Identity,
-
                  #norm_layers=partial(LayerNormWithoutBias, eps=1e-6), # partial(LayerNormGeneral, eps=1e-6, bias=False),
                  drop_path_rate=0.,
-                 layer_scale_init_values=None,
-                 res_scale_init_values=[None, None, 1.0, 1.0],
                  **kwargs,
                  ):
         super().__init__()
 
-        if not isinstance(depths, (list, tuple)):
-            depths = [depths] # it means the model has only one stage
-        if not isinstance(dims, (list, tuple)):
-            dims = [dims]
-
-        num_stage      = len(depths)
-        self.num_stage = num_stage
-
-        if not isinstance(downsample_layers, (list, tuple)):
-            downsample_layers = [downsample_layers] * num_stage
-        
-        down_dims = [in_chans] + dims
+        num_stage       = len(depths)
+        self.num_stage  = num_stage
+        down_dims       = [in_chans] + dims
         self.downsample_layers = nn.ModuleList([downsample_layers[i](down_dims[i], down_dims[i+1]) for i in range(num_stage)])
         
-        if not isinstance(token_mixers, (list, tuple)):
-            token_mixers = [token_mixers] * num_stage
-
-        #if not isinstance(norm_layers, (list, tuple)):
-        #    norm_layers = [norm_layers] * num_stage
-
-
         dp_rates=[x.item() for x in torch.linspace(0, drop_path_rate, sum(depths))]
 
-        if not isinstance(layer_scale_init_values, (list, tuple)):
-            layer_scale_init_values = [layer_scale_init_values] * num_stage
-        if not isinstance(res_scale_init_values, (list, tuple)):
-            res_scale_init_values = [res_scale_init_values] * num_stage
-
-        self.stages = nn.ModuleList() # each stage consists of multiple metaformer blocks
-        cur = 0
+        self.stages     = nn.ModuleList() # each stage consists of multiple metaformer blocks
+        cur             = 0
 
         for i in range(num_stage):
             stage = nn.Sequential(
                 *[EncoderBlock(  dim=dims[i],
                                     token_mixer=token_mixers[i],
                                     #norm_layer=norm_layers[i],
-                                    drop_path=dp_rates[cur + j],
-                                    layer_scale_init_value=layer_scale_init_values[i],
-                                    res_scale_init_value=res_scale_init_values[i],        ) for j in range(depths[i])]
+                                    drop_path=dp_rates[cur + j], ) for j in range(depths[i])]
             )
             self.stages.append(stage)
             cur += depths[i]
-
 
         self.apply(self._init_weights)
 
@@ -392,10 +345,6 @@ class Encoder(nn.Module):
             trunc_normal_(m.weight, std=.02)
             if m.bias is not None:
                 nn.init.constant_(m.bias, 0)
-
-    @torch.jit.ignore
-    def no_weight_decay(self):
-        return {'norm'}
 
     def get_features(self, x):
         out=[]
@@ -407,7 +356,7 @@ class Encoder(nn.Module):
 
     def forward(self, x):
         x,features = self.get_features(x)
-        return x
+        return x,features
 
 
 def encoder_function(training_mode=None,pretrained=False,**kwargs):
