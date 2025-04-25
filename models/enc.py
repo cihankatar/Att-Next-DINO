@@ -356,7 +356,7 @@ class Encoder(nn.Module):
 
     def forward(self, x):
         x,features = self.get_features(x)
-        return x,features
+        return x
 
 
 def encoder_function(training_mode=None,pretrained=False,**kwargs):
