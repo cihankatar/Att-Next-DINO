@@ -70,6 +70,7 @@ def main():
     model   = model_dice_bce().to(device)
     student = model.encoder
     teacher = copy.deepcopy(student)
+    teacher = teacher.to(device)
     teacher.load_state_dict(student.state_dict())
 
     for p in teacher.parameters():
@@ -101,11 +102,11 @@ def main():
 
                 # 1. Get student outputs for all crops
 
-                student_out = [ student(im) for im in student_augs ]  # list of length 8
+                student_out = [ student(im.to(device)) for im in student_augs ]  # list of length 8
 
                 # 2. Get teacher outputs for just the first 2 global crops
                 with torch.no_grad():
-                    teacher_out = [ teacher(teacher_augs[0]), teacher(teacher_augs[1]) ]  # list of length 2
+                    teacher_out = [ teacher(teacher_augs[0].to(device)), teacher(teacher_augs[1].to(device)) ]  # list of length 2
 
 
                 for s in student_out:
