@@ -18,7 +18,7 @@ def config_func(training_mode):
         "imsize"            :256,
         "lrate"             :0.0001,
         "aug"               :False,
-        "shuffle"           :False,
+        "shuffle"           :True,
         "sratio"            :None,
         "workers"           :2,
         "cutoutpr"          :None,
