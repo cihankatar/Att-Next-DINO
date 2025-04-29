@@ -431,4 +431,3 @@ def simclr(images,labels):
     plt.imshow(label7)
     plt.subplot(2,4,8)
     plt.imshow(label8)
-

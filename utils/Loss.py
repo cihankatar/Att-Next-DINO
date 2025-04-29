@@ -22,11 +22,12 @@ class DINOLoss(nn.Module):
         student_out = torch.mean(student_out, dim=(2, 3))
         teacher_out = torch.mean(teacher_out, dim=(2, 3))       
         student_out = student_out / self.student_temp
-        teacher_out = F.softmax((teacher_out - self.center) / self.teacher_temp, dim=-1)
+        center = self.center.to(teacher_out.device)
+        teacher_out = F.softmax((teacher_out - center) / self.teacher_temp, dim=-1)
         loss = -torch.sum(teacher_out * F.log_softmax(student_out, dim=-1), dim=-1).mean()
 
         # Center güncellemesi
-        self.center = self.center * self.center_momentum + (1 - self.center_momentum) * teacher_out.mean(0, keepdim=True)
+        self.center = self.center * self.center_momentum + (1 - self.center_momentum) * teacher_out.mean(0, keepdim=True).detach().cpu()
         return loss
 
 

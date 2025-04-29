@@ -5,17 +5,14 @@ import copy
 from tqdm import tqdm, trange
 from torch.optim import Adam
 from torch.optim.lr_scheduler import CosineAnnealingLR
-from data.data_loader import loader
+from data.data_loader3 import loader
 
 from augmentation.Augmentation import Cutout, cutmix
 from wandb_init import parser_init, wandb_init
 from utils.metrics import calculate_metrics
-from models.Model import model_dice_bce
+from models.Model3 import model_dice_bce3
 from utils.Loss import DINOLoss
 # from data.data_loader import DinoDataTransform
-from torch.nn.utils import clip_grad_norm_
-
-
 
 def featuremap_to_heatmap(tensor):
     """Convert a 2D tensor to a normalized heatmap suitable for wandb.Image."""
@@ -77,7 +74,7 @@ def main():
     args.op="train"
 
     # Student & Teacher modeli
-    model   = model_dice_bce().to(device)
+    model   = model_dice_bce3().to(device)
     student = model.encoder
     teacher = copy.deepcopy(student)
     teacher = teacher.to(device)
@@ -130,8 +127,6 @@ def main():
                 if training:
                     optimizer.zero_grad()
                     loss.backward()
-                    # Inside training loop, after loss.backward()
-                    clip_grad_norm_(model.parameters(), max_norm=2.0)
                     optimizer.step()
                     scheduler.step()
 
