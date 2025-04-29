@@ -56,7 +56,7 @@ def main():
     
     data, training_mode, op = 'isic_2018_1', "ssl", "train"
 
-    best_valid_loss = float("inf")
+    best_similarity = 0
     device      = using_device()
     folder_path = setup_paths(data)
     args, res   = parser_init("segmentation task", op, training_mode)
