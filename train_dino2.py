@@ -53,7 +53,7 @@ def main():
     
     data, training_mode, op = 'isic_2018_1', "ssl", "train"
 
-    best_valid_loss = float("inf")
+    best_valid_loss = float("-inf")
     device      = using_device()
     folder_path = setup_paths(data)
     args, res   = parser_init("segmentation task", op, training_mode)
@@ -200,7 +200,7 @@ def main():
         if val_metric < best_valid_loss:
             best_valid_loss = val_metric
             torch.save(student.state_dict(), checkpoint_path)
-            print(f"Best model saved with cosine sim: {val_metric:.4f}")
+            print(f"Best model saved with val loss: {val_metric:.4f}")
 
     wandb.finish()
 
