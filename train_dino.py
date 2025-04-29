@@ -202,10 +202,10 @@ def main():
         print(f"Validation Cosine Similarity: {val_metric:.4f}")
 
         # Save best model
-        if val_metric > best_valid_loss:
+        if val_metric < best_valid_loss:
             best_valid_loss = val_metric
             torch.save(student.state_dict(), checkpoint_path)
-            print(f"Best model saved with cosine sim: {val_metric:.4f}")
+            print(f"Best model saved with val loss: {val_metric:.4f}")
 
     wandb.finish()
 
