@@ -101,7 +101,7 @@ def main():
     # Training and Validation Loops
     def run_epoch(loader, training=True):
         """Run a single training or validation epoch."""
-        epoch_loss= 0.0
+        epoch_loss  = 0.0
         num_batches = 0
         epoch_val_loss = 0
         student.train()
@@ -194,18 +194,18 @@ def main():
         train_loss = run_epoch(train_loader, training=True)
         wandb.log({"Train Loss": train_loss})
 
-        val_metric = run_epoch(val_loader, training=False)
-        wandb.log({"Cosine Similarity": val_metric })
+        cos_sim = run_epoch(val_loader, training=False)
+        wandb.log({"Cosine Similarity": cos_sim })
 
         # Print losses and validation metrics
         print(f"Train Loss: {train_loss:.4f}")
-        print(f"Validation Cosine Similarity: {val_metric:.4f}")
+        print(f"Validation Cosine Similarity: {cos_sim:.4f}")
 
         # Save best model
-        if val_metric < best_valid_loss:
-            best_valid_loss = val_metric
+        if cos_sim > best_similarity:
+            best_similarity = cos_sim
             torch.save(student.state_dict(), checkpoint_path)
-            print(f"Best model saved with val loss: {val_metric:.4f}")
+            print(f"Best model saved")
 
     wandb.finish()
 

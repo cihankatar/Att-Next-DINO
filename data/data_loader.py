@@ -139,10 +139,10 @@ def loader(op,mode,sslmode,batch_size,num_workers,image_size,cutout_pr,cutout_bo
             data_test   = dataset(test_im_path, test_mask_path,cutout_pr,cutout_box, transformations,mode)
 
     elif op == "train":  #train for debug in local
-        data_train  = dataset(train_im_path[10:20],train_mask_path[10:20],cutout_pr,cutout_box, transformations,mode)
+        data_train  = dataset(train_im_path[10:30],train_mask_path[10:30],cutout_pr,cutout_box, transformations,mode)
 
     else:  #test in local
-        data_test   = dataset(test_im_path[10:20], test_mask_path[10:20],cutout_pr,cutout_box, transformations,mode)
+        data_test   = dataset(test_im_path[10:30], test_mask_path[10:30],cutout_pr,cutout_box, transformations,mode)
 
     if op == "train":
         train_loader = DataLoader(
