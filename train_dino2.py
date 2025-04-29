@@ -53,7 +53,7 @@ def main():
     
     data, training_mode, op = 'isic_2018_1', "ssl", "train"
 
-    best_valid_loss = float("-inf")
+    best_valid_loss = float("inf")
     device      = using_device()
     folder_path = setup_paths(data)
     args, res   = parser_init("segmentation task", op, training_mode)
@@ -68,10 +68,10 @@ def main():
         return loader(operation,args.mode, args.sslmode_modelname, args.bsize, args.workers,
                       args.imsize, args.cutoutpr, args.cutoutbox, args.shuffle, args.sratio, data)
 
-    train_loader = create_loader(args.op)
-    args.op="validation"
-    val_loader   = create_loader(args.op)
-    args.op="train"
+    train_loader    = create_loader(args.op)
+    args.op         =  "validation"
+    val_loader      = create_loader(args.op)
+    args.op         = "train"
 
     # Student & Teacher modeli
     model   = model_dice_bce2().to(device)

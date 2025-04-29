@@ -71,10 +71,10 @@ def main():
         return loader(operation,args.mode, args.sslmode_modelname, args.bsize, args.workers,
                       args.imsize, args.cutoutpr, args.cutoutbox, args.shuffle, args.sratio, data)
 
-    train_loader = create_loader(args.op)
-    args.op="validation"
-    val_loader   = create_loader(args.op)
-    args.op="train"
+    train_loader    = create_loader(args.op)
+    args.op         =  "validation"
+    val_loader      = create_loader(args.op)
+    args.op         = "train"
 
     # Student & Teacher modeli
     model   = model_dice_bce().to(device)

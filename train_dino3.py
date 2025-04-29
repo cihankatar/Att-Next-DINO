@@ -68,10 +68,10 @@ def main():
         return loader(operation,args.mode, args.sslmode_modelname, args.bsize, args.workers,
                       args.imsize, args.cutoutpr, args.cutoutbox, args.shuffle, args.sratio, data)
 
-    train_loader = create_loader(args.op)
-    args.op="validation"
-    val_loader   = create_loader(args.op)
-    args.op="train"
+    train_loader    = create_loader(args.op)
+    args.op         =  "validation"
+    val_loader      = create_loader(args.op)
+    args.op         = "train"
 
     # Student & Teacher modeli
     model   = model_dice_bce3().to(device)
@@ -200,7 +200,7 @@ def main():
         if val_metric < best_valid_loss:
             best_valid_loss = val_metric
             torch.save(student.state_dict(), checkpoint_path)
-            print(f"Best model saved with cosine sim: {val_metric:.4f}")
+            print(f"Best model saved with val loss: {val_metric:.4f}")
 
     wandb.finish()
 
