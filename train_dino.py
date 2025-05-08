@@ -3,26 +3,59 @@ import torch
 import wandb
 import copy
 from tqdm import tqdm, trange
-from torch.optim import Adam
+from torch.optim import AdamW 
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from data.data_loader import loader
-
-from augmentation.Augmentation import Cutout, cutmix
+import torch.nn.functional as F
+from augmentation.Augmentation import Cutout
 from wandb_init import parser_init, wandb_init
 from utils.metrics import calculate_metrics
 from models.Model import model_dice_bce
 from utils.Loss import DINOLoss
-# from data.data_loader import DinoDataTransform
 from torch.nn.utils import clip_grad_norm_
+from torch import nn 
+import matplotlib.pyplot as plt
+import numpy as np
 
+
+def get_teacher_momentum(current_epoch, max_epochs, base_m=0.996, final_m=1.0):
+    # Linear momentum schedule
+    return base_m + (final_m - base_m) * (current_epoch / max_epochs)
+
+def get_teacher_temp(epoch, warmup_epochs=30, final_temp=0.07):
+    start_temp = 0.04
+    if epoch < warmup_epochs:
+        return start_temp + (final_temp - start_temp) * epoch / warmup_epochs
+    else:
+        return final_temp
+    
+class ProjectionHead(nn.Module):
+    def __init__(self, in_dim=512, hidden_dim=2048, out_dim=512):
+        super().__init__()
+        self.mlp = nn.Sequential(
+            nn.Linear(in_dim, hidden_dim),
+            nn.GELU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.GELU(),
+            nn.Linear(hidden_dim, out_dim),
+        )
+    def forward(self, x):
+        return self.mlp(x)
 
 
 def featuremap_to_heatmap(tensor):
-    """Convert a 2D tensor to a normalized heatmap suitable for wandb.Image."""
+    """Convert a 2D tensor to a colored heatmap suitable for wandb.Image."""
     heatmap = tensor.detach().cpu()
     heatmap = (heatmap - heatmap.min()) / (heatmap.max() - heatmap.min() + 1e-5)  # Normalize to [0, 1]
-    heatmap = (heatmap * 255).byte()  # Convert to [0, 255]
-    return heatmap.numpy()
+    heatmap_np = heatmap.numpy()
+
+    # Apply colormap
+    cmap = plt.get_cmap("viridis")  # Choose any matplotlib colormap: 'jet', 'plasma', etc.
+    colored_heatmap = cmap(heatmap_np)[:, :, :3]  # Drop alpha channel
+
+    # Convert to 8-bit RGB
+    colored_heatmap = (colored_heatmap * 255).astype(np.uint8)
+    return colored_heatmap
 
 def using_device():
     """Set and print the device used for training."""
@@ -45,7 +78,7 @@ def setup_paths(data):
     return os.path.join(base_path, folder)
 
 @torch.no_grad()
-def update_teacher(student, teacher, momentum=0.996):
+def update_teacher(student, teacher, momentum):
     for param_s, param_t in zip(student.parameters(), teacher.parameters()):
         param_t.data = momentum * param_t.data + (1. - momentum) * param_s.data
         
@@ -64,8 +97,7 @@ def main():
     res         = "["+res+"]"
 
     config      = wandb_init(os.environ["WANDB_API_KEY"], os.environ["WANDB_DIR"], args, data)
-    
-    
+
     # Data Loaders
     def create_loader(operation):
         return loader(operation,args.mode, args.sslmode_modelname, args.bsize, args.workers,
@@ -87,67 +119,74 @@ def main():
         p.requires_grad = False
 
     # Optimizasyon & Loss
-    optimizer       = torch.optim.Adam(student.parameters(), lr=1e-4)
     loss_fn         = DINOLoss()
     checkpoint_path = folder_path+str(model.__class__.__name__)+str(res)
-    optimizer       = Adam(model.parameters(), lr=config['learningrate'])
+    optimizer       = AdamW(student.parameters(), lr=config['learningrate'],weight_decay=0.05)
     scheduler       = CosineAnnealingLR(optimizer, config['epochs'], eta_min=config['learningrate'] / 10)
-
+    
     print(f"Training on {len(train_loader) * args.bsize} images. Saving checkpoints to {folder_path}")
-    print('Train loader transform',train_loader.dataset.tr)
-    print('Val loader transform',val_loader.dataset.tr)
+    print('Train loader global transform',train_loader.dataset.tr.global_transform,'Train loader local transform',train_loader.dataset.tr.local_transform)
     print(f"model config : {checkpoint_path}")
 
+    # ML_DATA_OUTPUT      = os.environ["ML_DATA_OUTPUT"]+'isic_1/'
+    # checkpoint_path_read = ML_DATA_OUTPUT+str(model.__class__.__name__)+str(res)
+    # student.load_state_dict(torch.load(checkpoint_path_read, map_location=torch.device('cpu')))
+
+    student_head = ProjectionHead().to(device)
+    teacher_head = copy.deepcopy(student_head).to(device)
+    for p in teacher_head.parameters():
+        p.requires_grad = False
     # Training and Validation Loops
-    def run_epoch(loader, training=True):
+    def run_epoch(loader,epoch_idx, momentum,training=True):
         """Run a single training or validation epoch."""
         epoch_loss  = 0.0
         num_batches = 0
         epoch_val_loss = 0
-        student.train()
+
+        if not training:
+            student.eval()
+            teacher.eval()
+        else:
+            student.train()
+        
+        teacher_temp = get_teacher_temp(epoch_idx)
+        current_lr = optimizer.param_groups[0]['lr']
+        print("teacher temp",teacher_temp,"\n")
+        print("current_lr",current_lr,"\n")
+
         with torch.set_grad_enabled(training):
-            for student_augs, teacher_augs in tqdm(loader, desc="Training" if training else "Validating", leave=False):
-                
-                loss,n_pairs        = 0,0
+            for student_augs, teacher_augs in loader:  #tqdm(loader, desc="Training" if training else "Validating", leave=False):
 
-                # 1. Get student outputs for all crops
+                loss        = 0.0
 
-                student_out = [ student(im.to(device)) for im in student_augs ]  # list of length 8
+                student_feats = [student(im.to(device)) for im in student_augs]  # [B, C,H,W]
+                student_pool = [im.mean(dim=(2,3)) for im in student_feats]     # [B, C]
+                student_proj = [F.normalize(student_head(f), dim=1) for f in student_pool]
 
-                # 2. Get teacher outputs for just the first 2 global crops
                 with torch.no_grad():
-                    teacher_out = [ teacher(teacher_augs[0].to(device)), teacher(teacher_augs[1].to(device)) ]  # list of length 2
+                    teacher_feats = [teacher(im.to(device)) for im in teacher_augs] # [B, C,H,W]
+                    teacher_pool = [im.mean(dim=(2,3)) for im in teacher_feats]     # [B, C]
+                    teacher_proj = [F.normalize(teacher_head(f), dim=1) for f in teacher_pool]
 
+                loss = loss_fn(student_proj, teacher_proj,teacher_temp)
 
-                for s in student_out:
-                    for t in teacher_out:
-                        loss += loss_fn(s, t)
-                        n_pairs    += 1
-
-                # 4) Final average:
-                loss = loss / n_pairs   # averages over the 6×2 = 12 pairs
-                
                 if training:
                     optimizer.zero_grad()
                     loss.backward()
                     # Inside training loop, after loss.backward()
-                    clip_grad_norm_(model.parameters(), max_norm=2.0)
+                    clip_grad_norm_(student.parameters(), max_norm=2.0)
                     optimizer.step()
-                    scheduler.step()
 
-                update_teacher(student, teacher)
+                update_teacher(student, teacher, momentum)
+                update_teacher(student_head, teacher_head, momentum)
                 epoch_loss += loss.item()
 
                 # Calculate cosine similarity during validation
                 if not training:
     
-                    # 1) Pool spatial dims
-                    stu_pooled = [s.mean(dim=(2,3)) for s in student_out]   # each [B, C]
-                    tea_pooled = [t.mean(dim=(2,3)) for t in teacher_out]   # each [B, C]
-
                     # 2) Stack into [B, views, C]
-                    stu_stack = torch.stack(stu_pooled, dim=1)   # [B, 8, C]
-                    tea_stack = torch.stack(tea_pooled, dim=1)   # [B, 2, C]
+                    stu_stack = torch.stack(student_pool, dim=1)   # [B, 8, C]
+                    tea_stack = torch.stack(teacher_pool, dim=1)   # [B, 2, C]
                     # 3b) If you want all student vs all teacher pairwise:
 
                     pairwise = []
@@ -160,8 +199,8 @@ def main():
                     epoch_val_loss += val_loss.item()
                     
                     # Select one sample (e.g. sample 1 from batch 1)
-                    student_feat = student_out[1][1]  # shape: [512, 8, 8]
-                    teacher_feat = teacher_out[1][1]  # shape: [512, 16, 16]
+                    student_feat = student_feats[1][1]  # shape: [512, 8, 8]
+                    teacher_feat = teacher_feats[1][1]  # shape: [512, 16, 16]
 
                     # Average across channels to get a single 8x8 or 16x16 map
                     student_map = student_feat.mean(dim=0)  # [8, 8]
@@ -176,27 +215,33 @@ def main():
                     if num_batches == 1:  # just log the first batch to reduce clutter
                         # Log it
                         wandb.log({
-                            "Val Sample - Student Aug": [wandb.Image(student_augs[i]) for i in range(min(2, student_augs[0].shape[0]))],
-                            "Val Sample - Teacher Aug": [wandb.Image(teacher_augs[i]) for i in range(min(2, teacher_augs[0].shape[0]))],
+                            "Val Sample - Student Aug": wandb.Image(student_augs[1][1]),
+                            "Val Sample - Teacher Aug": wandb.Image(teacher_augs[1][1]),
                             "Val Sample - Student Output Heatmap": student_img,
-                            "Val Sample - Teacher Output Heatmap": teacher_img                        
-                            })
-
+                            "Val Sample - Teacher Output Heatmap": teacher_img,                          
+                            })     
 
         if not training:
             return epoch_val_loss / len(loader)
 
         return epoch_loss / len(loader)
 
+    epoch_idx=0
     for epoch in trange(config['epochs'], desc="Epochs"):
 
         # Training
-        train_loss = run_epoch(train_loader, training=True)
+        current_momentum = get_teacher_momentum(epoch, config['epochs'])
+        train_loss = run_epoch(train_loader, epoch_idx, current_momentum,training=True )
         wandb.log({"Train Loss": train_loss})
+        scheduler.step()
 
-        cos_sim = run_epoch(val_loader, training=False)
+        cos_sim = run_epoch(val_loader, epoch_idx,current_momentum,training=False)
         wandb.log({"Cosine Similarity": cos_sim })
 
+        epoch_idx+=1
+
+        print("epoch_idx",epoch_idx,"\n")
+        
         # Print losses and validation metrics
         print(f"Train Loss: {train_loss:.4f}")
         print(f"Validation Cosine Similarity: {cos_sim:.4f}")

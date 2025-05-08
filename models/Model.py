@@ -35,6 +35,7 @@ class Bottleneck(nn.Module):
         out     = convout+inputs
 
         return out
+    
 #####   MODEL #####
     
 class model_dice_bce(nn.Module):
@@ -55,9 +56,7 @@ class model_dice_bce(nn.Module):
         self.pwconv1   = nn.Linear(64,64)
         self.norm      = nn.LayerNorm(64)
         self.act       = nn.GELU()
-        self.pwconv2   = nn.Linear(64,1)
-
-        self.convlast           = nn.Conv2d(64,1,kernel_size=1, stride=1,padding='same')
+        self.pwconv2   = nn.Linear(64,3)
 
     def forward(self, inputs):                      # 1x  3 x 128 x 128
         

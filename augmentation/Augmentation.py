@@ -4,8 +4,6 @@ import torch
 import random
 import cv2 
 
-
-
 def rand_bbox(size):
         
     lam = np.random.beta(1., 1.)
@@ -70,7 +68,6 @@ def Cutout(images,masks,pr,padsize):
     else:
         return images,masks
         
-
 
 
 def circular_mix(images, masks, pr, alpha=1.0):

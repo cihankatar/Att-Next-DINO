@@ -50,8 +50,6 @@ def process_model_output(model, images):
     
     return model(images)
     
-
-
 if __name__ == "__main__":
 
     device          = using_device()

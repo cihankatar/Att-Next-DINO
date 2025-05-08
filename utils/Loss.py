@@ -9,27 +9,36 @@ from torch_topological.nn import WassersteinDistance,CubicalComplex
 #import gudhi as gd
 
 
-# 🔥 DINO Loss sınıfı
 class DINOLoss(nn.Module):
-    def __init__(self, out_dim=512, teacher_temp=0.07, student_temp=0.1, center_momentum=0.9):
+    def __init__(self, out_dim=512, student_temp=0.1, center_momentum=0.9):
         super().__init__()
-        self.teacher_temp = teacher_temp
         self.student_temp = student_temp
         self.center_momentum = center_momentum
         self.register_buffer("center", torch.zeros(1, out_dim))
 
-    def forward(self, student_out, teacher_out):
-        student_out = torch.mean(student_out, dim=(2, 3))
-        teacher_out = torch.mean(teacher_out, dim=(2, 3))       
-        student_out = student_out / self.student_temp
-        center = self.center.to(teacher_out.device)
-        teacher_out = F.softmax((teacher_out - center) / self.teacher_temp, dim=-1)
-        loss = -torch.sum(teacher_out * F.log_softmax(student_out, dim=-1), dim=-1).mean()
+    def forward(self, student_outputs, teacher_outputs,teacher_temp):
+        
+        total_loss, n_loss_terms = 0.0, 0
 
-        # Center güncellemesi
-        self.center = self.center * self.center_momentum + (1 - self.center_momentum) * teacher_out.mean(0, keepdim=True).detach().cpu()
-        return loss
+        # Teacher softmax with centering & temperature
+        teacher_logits = [(t - self.center.to(t.device)) / teacher_temp for t in teacher_outputs]
+        teacher_probs = [F.softmax(logits, dim=-1).detach() for logits in teacher_logits]
 
+        # Student scaled logits
+        student_logits = [s / self.student_temp for s in student_outputs]
+
+        for t_out in teacher_probs:
+            for s_log in student_logits:
+                loss = torch.sum(-t_out * F.log_softmax(s_log, dim=-1), dim=-1).mean()
+                total_loss += loss
+                n_loss_terms += 1
+        # Update center (only from teacher views)
+        batch_center = torch.cat(teacher_outputs, dim=0).mean(dim=0, keepdim=True)
+        with torch.no_grad():
+            self.center = self.center.to(batch_center.device) * self.center_momentum + \
+                        (1 - self.center_momentum) * batch_center
+
+        return total_loss / n_loss_terms
 
 class Topological_Loss(torch.nn.Module):
 

@@ -7,86 +7,76 @@ from torchvision.transforms import v2
 import os
 import torch
 
-
-
 def data_transform():
-        
     IMAGENET_MEAN = (0.485, 0.456, 0.406)
     IMAGENET_STD  = (0.229, 0.224, 0.225)
 
+    # ----- GLOBAL CROPS (2 views) -----
     global_transforms = v2.Compose([
-        v2.RandomResizedCrop(256, scale=(0.4, 1.0), antialias=True),
+        # larger crop, encourages invariance to scale
+        v2.RandomResizedCrop(256, scale=(0.6, 1.0), antialias=True),
         v2.RandomHorizontalFlip(p=0.5),
-        v2.ColorJitter(0.2, 0.2, 0.2, 0.05),
-        v2.RandomGrayscale(p=0.1),
-        v2.GaussianBlur(kernel_size=int(0.1*256)//2*2+1, sigma=(0.1, 2.0)),
+
+        # color distortions
+        v2.RandomApply([v2.ColorJitter(0.4, 0.4, 0.4, 0.1)], p=0.8),
+        v2.RandomGrayscale(p=0.2),
+
+        # blur + solarize
+        v2.RandomApply([v2.GaussianBlur(
+            kernel_size=int(0.1 * 256)//2*2 + 1, sigma=(0.1, 2.0)
+        )], p=1.0),
+        v2.RandomSolarize(threshold=0.5, p=0.2),
+
+        # final normalization
         v2.ToTensor(),
         v2.Normalize(IMAGENET_MEAN, IMAGENET_STD),
     ])
 
+    # ----- LOCAL CROPS (6 views) -----
     local_transforms = v2.Compose([
-        v2.RandomResizedCrop(128, scale=(0.05, 0.4), antialias=True),
+        # smaller crop, focuses on fine details
+        v2.RandomResizedCrop(128, scale=(0.3, 0.6), antialias=True),
         v2.RandomHorizontalFlip(p=0.5),
-        v2.ColorJitter(0.2, 0.2, 0.2, 0.05),
-        v2.RandomGrayscale(p=0.1),
-        v2.GaussianBlur(kernel_size=int(0.05*256)//2*2+1, sigma=(0.1, 2.0)),
+
+        # same color jitter but maybe slightly weaker
+        v2.RandomApply([v2.ColorJitter(0.4, 0.4, 0.4, 0.1)], p=0.8),
+        v2.RandomGrayscale(p=0.2),
+
+        # occasional blur
+        v2.RandomApply([v2.GaussianBlur(
+            kernel_size=int(0.05 * 256)//2*2 + 1, sigma=(0.1, 2.0)
+        )], p=0.5),
+
         v2.ToTensor(),
         v2.Normalize(IMAGENET_MEAN, IMAGENET_STD),
     ])
 
+    # Builds 2 global + 6 local crops per image:
+    return DinoMultiCropTransform(global_transforms,
+                                  local_transforms,
+                                  n_global_crops=2,
+                                  n_local_crops=6)
 
-    transformations = DinoMultiCropTransform(global_transforms, local_transforms, n_local_crops=6)
-
-    return transformations
 
 
 class DinoMultiCropTransform:
-    def __init__(self, global_transform, local_transform, n_local_crops=6):
+    def __init__(self, global_transform, local_transform, n_local_crops=6,n_global_crops=2):
         self.global_transform = global_transform
         self.local_transform = local_transform
         self.n_local = n_local_crops
+        self.n_global_crops = n_global_crops
 
     def __call__(self, img):
         student_crops = []
         teacher_crops = []
         # 2 global views
-        for _ in range(2):
+        for _ in range(self.n_global_crops):
             teacher_crops.append(self.global_transform(img))
         # n local views
         for _ in range(self.n_local):
             student_crops.append(self.local_transform(img))
         
         return student_crops,teacher_crops
-
-"""def data_transform(mode,task,train,image_size):
-
-    transformations = v2.Compose([
-        v2.RandomResizedCrop([image_size,image_size],antialias=True),
-        v2.RandomHorizontalFlip(p=0.5),
-        v2.ColorJitter(0.4, 0.4, 0.4, 0.1),
-        v2.RandomGrayscale(p=0.2),
-        #v2.ToTensor(),
-        #v2.Normalize([0.4914, 0.4822, 0.4465], [0.2023, 0.1994, 0.2010])
-    ])
-            
-    transformations = DinoDataTransform(transformations)
-
-    return transformations
-
-    
-
-class DinoDataTransform(object):
-    def __init__(self, transform):
-        self.transform = transform
-
-    def __call__(self, sample):
- 
-        xi = self.transform(sample)
-        xj = self.transform(sample)
-        return xi, xj
-
-
-"""
 
 def loader(op,mode,sslmode,batch_size,num_workers,image_size,cutout_pr,cutout_box,shuffle,split_ratio,data):
 
