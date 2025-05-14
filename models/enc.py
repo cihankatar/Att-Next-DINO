@@ -352,67 +352,23 @@ class Encoder(nn.Module):
             x = self.downsample_layers[i](x)
             x = self.stages[i](x)
             out.append(x)
-        return x,out
+        return out
 
     def forward(self, x):
-        x,features = self.get_features(x)
-        return x
+        features = self.get_features(x)
+        return features
 
 
-def encoder_function(training_mode=None,pretrained=False,**kwargs):
+def encoder_function():
 
     model = Encoder(
         depths=[1,1,1,1],
         dims=[64, 128, 256, 512],
         token_mixers=[SepConv, SepConv, Attention, Attention],
-        **kwargs)
-    
+        )
 
-    if training_mode=="ssl_pretrained":
-        
-        if torch.cuda.is_available():
-            ML_DATA_OUTPUT = os.environ["ML_DATA_OUTPUT"]
-        else:
-            ML_DATA_OUTPUT = os.environ["ML_DATA_OUTPUT_LOCAL"]
-        checkpoint_path = ML_DATA_OUTPUT+str(model.__class__.__name__)
-        
-        if os.path.exists(checkpoint_path):
-            if pretrained == True:
-                print("SSL Pretrained SimCLR Imagenet pretrained weights are being used")
-            else:
-                print("SSL Pretrained SimCLR with random weights are being used")
+    return model
 
-            if torch.cuda.is_available():
-                model.load_state_dict(torch.load(checkpoint_path))
-            else: 
-                model.load_state_dict(torch.load(checkpoint_path, map_location=torch.device('cpu')))
-                
-        else:
-            raise Exception('No Model to Load for ssl_pretrained')
-        return model
-
-
-    elif training_mode=="supervised":
-        if pretrained:
-            state_dict = torch.hub.load_state_dict_from_url(
-                url= model.default_cfg['url'], map_location="cpu", check_hash=True)
-            model.load_state_dict(state_dict)
-            print("Imagenet Pretrained weights are being used")
-
-        else:
-            print("random weights are being used...")
-        return model
-
-    elif training_mode=="ssl":
-        if pretrained:
-            state_dict = torch.hub.load_state_dict_from_url(
-                url= model.default_cfg['url'], map_location="cpu", check_hash=True)
-            model.load_state_dict(state_dict)
-            print("Imagenet Pretrained weights are being used")
-
-        else:
-            print("random weights are being used...")
-        return model
 
 
 if __name__ == '__main__':

@@ -1,7 +1,6 @@
 from torch.utils.data import DataLoader
 
 from data.Custom_Dataset import dataset
-from utils.Test_Train_Split import ssl_data_split
 from glob import glob
 from torchvision.transforms import v2 
 import os
@@ -14,7 +13,7 @@ def data_transform():
     # ----- GLOBAL CROPS (2 views) -----
     global_transforms = v2.Compose([
         # larger crop, encourages invariance to scale
-        v2.RandomResizedCrop(256, scale=(0.4, 1.0), antialias=True),
+        v2.RandomResizedCrop(256, scale=(0.6, 1.0), antialias=True),
         v2.RandomHorizontalFlip(p=0.5),
 
         # color distortions
@@ -35,7 +34,7 @@ def data_transform():
     # ----- LOCAL CROPS (6 views) -----
     local_transforms = v2.Compose([
         # smaller crop, focuses on fine details
-        v2.RandomResizedCrop(256, scale=(0.2, 0.6), antialias=True),
+        v2.RandomResizedCrop(128, scale=(0.1, 0.6), antialias=True),
         v2.RandomHorizontalFlip(p=0.5),
 
         # same color jitter but maybe slightly weaker

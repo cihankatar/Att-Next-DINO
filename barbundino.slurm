@@ -17,4 +17,4 @@ eval "$(/truba/sw/centos7.3/lib/anaconda3/2021.11/bin/conda shell.bash hook)"
 
 conda activate segmentation
 cd /truba/home/ckatar/Desktop/Att-Next-DINO
-python train_dino.py -p=False -i=256 -b=8 -x=0.5 -o=0.5 -e=100 -l=0.0001
+python train_ssl_pretrained.py -p=False -i=256 -b=8 -x=0.5 -o=0.5 -e=201 -l=0.0001 -r=0.01

@@ -8,9 +8,9 @@ from torch.utils.data import Dataset
 class dataset(Dataset):
     def __init__(self,train_path,mask_path,cutout_pr,cutout_box,transforms,training_type): #
         super().__init__()
-        self.train_path     = train_path
-        self.mask_path      = mask_path
-        self.tr             = transforms
+        self.train_path      = train_path
+        self.mask_path       = mask_path
+        self.tr              = transforms
         self.cutout_pr      = cutout_pr
         self.cutout_pad     = cutout_box
         self.training_type  = training_type
@@ -35,13 +35,13 @@ class dataset(Dataset):
             image=image/255
             mask=mask/255
 
-            if self.training_type == "ssl":
-                # this returns a list of 8 tensors
-                student_views,teacher_views = self.tr(image)   
-                
-                # now you can return them however your SSL loop expects:
-                # e.g. (teacher_views, student_views, mask) or flatten all:
-                return student_views,teacher_views 
+            s = np.random.randint(0,2**16)   
+            np.random.seed(s)
+            torch.manual_seed(s)
+            image = self.tr(image)
+            np.random.seed(s)
+            torch.manual_seed(s)
+            mask = self.tr(mask)
                 
             return image , mask
     

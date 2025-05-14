@@ -1,86 +1,44 @@
 from torch.utils.data import DataLoader
 
-from data.Custom_Dataset import dataset
+from data.Custom_Dataset_ssl_pretrained import dataset
+from utils.Test_Train_Split import ssl_data_split
 from glob import glob
 from torchvision.transforms import v2 
 import os
+import numpy as np
 import torch
 
-def data_transform():
-    IMAGENET_MEAN = (0.485, 0.456, 0.406)
-    IMAGENET_STD  = (0.229, 0.224, 0.225)
 
-    # ----- GLOBAL CROPS (2 views) -----
-    global_transforms = v2.Compose([
-        # larger crop, encourages invariance to scale
-        v2.RandomResizedCrop(256, scale=(0.6, 1.0), antialias=True),
-        v2.RandomHorizontalFlip(p=0.5),
-
-        # color distortions
-        v2.RandomApply([v2.ColorJitter(0.4, 0.4, 0.4, 0.1)], p=0.8),
-        v2.RandomGrayscale(p=0.2),
-
-        # blur + solarize
-        v2.RandomApply([v2.GaussianBlur(
-            kernel_size=int(0.1 * 256)//2*2 + 1, sigma=(0.1, 2.0)
-        )], p=1.0),
-        v2.RandomSolarize(threshold=0.5, p=0.2),
-
-        # final normalization
-        v2.ToTensor(),
-        v2.Normalize(IMAGENET_MEAN, IMAGENET_STD),
-    ])
-
-    # ----- LOCAL CROPS (6 views) -----
-    local_transforms = v2.Compose([
-        # smaller crop, focuses on fine details
-        v2.RandomResizedCrop(128, scale=(0.3, 0.6), antialias=True),
-        v2.RandomHorizontalFlip(p=0.5),
-
-        # same color jitter but maybe slightly weaker
-        v2.RandomApply([v2.ColorJitter(0.4, 0.4, 0.4, 0.1)], p=0.8),
-        v2.RandomGrayscale(p=0.2),
-
-        # occasional blur
-        v2.RandomApply([v2.GaussianBlur(
-            kernel_size=int(0.05 * 256)//2*2 + 1, sigma=(0.1, 2.0)
-        )], p=0.5),
-
-        v2.ToTensor(),
-        v2.Normalize(IMAGENET_MEAN, IMAGENET_STD),
-    ])
-
-    # Builds 2 global + 6 local crops per image:
-    return DinoMultiCropTransform(global_transforms,
-                                  local_transforms,
-                                  n_global_crops=2,
-                                  n_local_crops=6)
-
-
-
-class DinoMultiCropTransform:
-    def __init__(self, global_transform, local_transform, n_local_crops=6,n_global_crops=2):
-        self.global_transform = global_transform
-        self.local_transform = local_transform
-        self.n_local = n_local_crops
-        self.n_global_crops = n_global_crops
-
-    def __call__(self, img):
-        student_crops = []
-        teacher_crops = []
-        # 2 global views
-        for _ in range(self.n_global_crops):
-            teacher_crops.append(self.global_transform(img))
-        # n local views
-        for _ in range(self.n_local):
-            student_crops.append(self.local_transform(img))
+def data_transform(train,image_size):
         
-        return student_crops,teacher_crops
+        if train:
+        
+            transformations = v2.Compose([  v2.Resize([image_size,image_size],antialias=True),                                           
+                                        v2.RandomHorizontalFlip(p=0.5),
+                                        v2.RandomVerticalFlip(p=0.5),
+                                        v2.RandomRotation(degrees=(0, 90)),
+                                        #v2.RandomAdjustSharpness(sharpness_factor=10, p=0.),
+                                        #v2.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1)
+                                        #v2.RandomPerspective(distortion_scale=0.5, p=0.5),
+                                        #v2.RandomAffine(degrees=(30, 70), translate=(0.1, 0.3), scale=(0.75, 0.75)),
+                                        #v2.RandomPhotometricDistort(p=0.3),
+                                        #v2.Normalize(mean=(0.400, 0.485, 0.456, 0.406), std=(0,222, 0.229, 0.224, 0.225))                              
+                                    ])
+        else:
+            transformations = v2.Compose([  v2.Resize([image_size,image_size],antialias=True),
+                            #v2.RandomHorizontalFlip(p=0.5),
+                            #v2.RandomVerticalFlip(p=0.5),
+                            #v2.RandomRotation(degrees=(0, 90)),
+                            #v2.Normalize(mean=(0.400, 0.485, 0.456, 0.406), std=(0,222, 0.229, 0.224, 0.225)),                                
+                            ])
+            
+        return transformations
+
 
 def loader(op,mode,sslmode,batch_size,num_workers,image_size,cutout_pr,cutout_box,shuffle,split_ratio,data):
 
     if data=='isic_2018_1':
-        foldernamepath="isic_2018_3/"
+        foldernamepath="isic_2018_1/"
         imageext="/*.jpg"
         maskext="/*.png"
     elif data == 'kvasir_1':

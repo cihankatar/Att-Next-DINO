@@ -5,11 +5,9 @@ import copy
 from tqdm import tqdm, trange
 from torch.optim import AdamW 
 from torch.optim.lr_scheduler import CosineAnnealingLR
-from data.data_loader3 import loader
+from data.data_loader import loader
 import torch.nn.functional as F
-from augmentation.Augmentation import Cutout
 from wandb_init import parser_init, wandb_init
-from utils.metrics import calculate_metrics
 from models.Model import model_dice_bce
 from utils.Loss import DINOLoss
 from torch.nn.utils import clip_grad_norm_
@@ -30,7 +28,7 @@ def get_teacher_temp(epoch, warmup_epochs=30, final_temp=0.07):
         return final_temp
     
 class ProjectionHead(nn.Module):
-    def __init__(self, in_dim=512, hidden_dim=2048, out_dim=512):
+    def __init__(self, in_dim, hidden_dim=1024, out_dim=512):
         super().__init__()
         self.mlp = nn.Sequential(
             nn.Linear(in_dim, hidden_dim),
@@ -83,13 +81,11 @@ def update_teacher(student, teacher, momentum):
         param_t.data = momentum * param_t.data + (1. - momentum) * param_s.data
         
 
-# Main Function
 def main():
-    # Configuration and Initial Setup
-    
+
     data, training_mode, op = 'isic_2018_1', "ssl", "train"
 
-    best_similarity = 0
+    best_loss   = float("inf")
     device      = using_device()
     folder_path = setup_paths(data)
     args, res   = parser_init("segmentation task", op, training_mode)
@@ -120,7 +116,7 @@ def main():
 
     # Optimizasyon & Loss
     loss_fn         = DINOLoss()
-    checkpoint_path = folder_path+str(model.__class__.__name__)+str(res)
+    checkpoint_path = folder_path+str(student.__class__.__name__)+str(res)
     optimizer       = AdamW(student.parameters(), lr=config['learningrate'],weight_decay=0.05)
     scheduler       = CosineAnnealingLR(optimizer, config['epochs'], eta_min=config['learningrate'] / 10)
     
@@ -129,51 +125,51 @@ def main():
     print(f"model config : {checkpoint_path}")
 
     # ML_DATA_OUTPUT      = os.environ["ML_DATA_OUTPUT"]+'isic_1/'
-    # checkpoint_path_read = ML_DATA_OUTPUT+str(model.__class__.__name__)+str(res)
+    # checkpoint_path_read = ML_DATA_OUTPUT+str(student.__class__.__name__)+str(res)
     # student.load_state_dict(torch.load(checkpoint_path_read, map_location=torch.device('cpu')))
 
-    student_head = ProjectionHead().to(device)
-    teacher_head = copy.deepcopy(student_head).to(device)
-    for p in teacher_head.parameters():
-        p.requires_grad = False
+    student_heads = nn.ModuleList([
+    ProjectionHead(in_dim=64),
+    ProjectionHead(in_dim=128),
+    ProjectionHead(in_dim=256),
+    ProjectionHead(in_dim=512),
+                                ])
+    
+    teacher_heads = copy.deepcopy(student_heads)
+    for head in teacher_heads:
+        for p in head.parameters():
+            p.requires_grad = False
     # Training and Validation Loops
-    def run_epoch(loader,epoch_idx, momentum,training=True):
-        """Run a single training or validation epoch."""
-        epoch_loss  = 0.0
-        num_batches = 0
-        epoch_val_loss = 0
 
-        if not training:
-            student.eval()
-            teacher.eval()
-        else:
-            student.train()
-        
+    def run_epoch(loader, epoch_idx, momentum, training=True):
+        epoch_loss = 0.0
+        num_batches = 0
+        epoch_val_loss = 0.0
+
+        student.train() if training else student.eval()
+        teacher.eval()
+
         teacher_temp = get_teacher_temp(epoch_idx)
         current_lr = optimizer.param_groups[0]['lr']
-        print("teacher temp",teacher_temp,"\n")
-        print("current_lr",current_lr,"\n")
+        print("teacher temp", teacher_temp, "\n")
+        print("current_lr", current_lr, "\n")
 
         with torch.set_grad_enabled(training):
-            for student_augs, teacher_augs in loader:  #tqdm(loader, desc="Training" if training else "Validating", leave=False):
-
-                loss        = 0.0
-
-                student_feats = [student(im.to(device)) for im in student_augs]  # [B, C,H,W]
-                student_pool = [im.mean(dim=(2,3)) for im in student_feats]     # [B, C]
-                student_proj = [F.normalize(student_head(f), dim=1) for f in student_pool]
+            for student_augs, teacher_augs in loader:
+                student_feats = [student(im.to(device))[3] for im in student_augs]
+                student_pool  = [feat.mean(dim=(2, 3)) for feat in student_feats]
+                student_proj  = [F.normalize(student_head(p), dim=1) for p in student_pool]
 
                 with torch.no_grad():
-                    teacher_feats = [teacher(im.to(device)) for im in teacher_augs] # [B, C,H,W]
-                    teacher_pool = [im.mean(dim=(2,3)) for im in teacher_feats]     # [B, C]
-                    teacher_proj = [F.normalize(teacher_head(f), dim=1) for f in teacher_pool]
+                    teacher_feats = [teacher(im.to(device))[3] for im in teacher_augs]
+                    teacher_pool  = [feat.mean(dim=(2, 3)) for feat in teacher_feats]
+                    teacher_proj  = [F.normalize(teacher_head(p), dim=1) for p in teacher_pool]
 
-                loss = loss_fn(student_proj, teacher_proj,teacher_temp)
+                loss = loss_fn(student_proj, teacher_proj, teacher_temp)
 
                 if training:
                     optimizer.zero_grad()
                     loss.backward()
-                    # Inside training loop, after loss.backward()
                     clip_grad_norm_(student.parameters(), max_norm=2.0)
                     optimizer.step()
 
@@ -181,46 +177,36 @@ def main():
                 update_teacher(student_head, teacher_head, momentum)
                 epoch_loss += loss.item()
 
-                # Calculate cosine similarity during validation
                 if not training:
-    
-                    # 2) Stack into [B, views, C]
-                    stu_stack = torch.stack(student_pool, dim=1)   # [B, 8, C]
-                    tea_stack = torch.stack(teacher_pool, dim=1)   # [B, 2, C]
-                    # 3b) If you want all student vs all teacher pairwise:
+                    # Cosine similarity between projected features
+                    stu_stack = torch.stack(student_proj, dim=1)  # [B, views_s, C]
+                    tea_stack = torch.stack(teacher_proj, dim=1)  # [B, views_t, C]
 
                     pairwise = []
-                    for s in range(6):
-                        for t in range(2):
-                            cos = torch.nn.functional.cosine_similarity(stu_stack[:, s], tea_stack[:, t], dim=-1)
+                    for s in range(stu_stack.size(1)):
+                        for t in range(tea_stack.size(1)):
+                            cos = F.cosine_similarity(stu_stack[:, s], tea_stack[:, t], dim=-1)
                             pairwise.append(cos)
-                    # `pairwise` is a list of 16 tensors [B]; stack and mean:
+
                     val_loss = torch.stack(pairwise, dim=1).mean()
                     epoch_val_loss += val_loss.item()
-                    
-                    # Select one sample (e.g. sample 1 from batch 1)
-                    student_feat = student_feats[1][1]  # shape: [512, 8, 8]
-                    teacher_feat = teacher_feats[1][1]  # shape: [512, 16, 16]
 
-                    # Average across channels to get a single 8x8 or 16x16 map
-                    student_map = student_feat.mean(dim=0)  # [8, 8]
-                    teacher_map = teacher_feat.mean(dim=0)  # [16, 16]
+                    # Log heatmaps and augs for first batch only
+                    if num_batches == 0:
+                        b_idx, v_idx = 0, 0
+                        student_map = student_feats[v_idx][b_idx].mean(dim=0).detach().cpu()
+                        teacher_map = teacher_feats[v_idx][b_idx].mean(dim=0).detach().cpu()
 
-                    # Convert to heatmap image
-                    student_img = wandb.Image(featuremap_to_heatmap(student_map))
-                    teacher_img = wandb.Image(featuremap_to_heatmap(teacher_map))
-
-                    num_batches+=1
-                    # Optionally log sample images to wandb
-                    if num_batches == 1:  # just log the first batch to reduce clutter
-                        # Log it
                         wandb.log({
-                            "Val Sample - Student Aug": wandb.Image(student_augs[1][1]),
-                            "Val Sample - Teacher Aug": wandb.Image(teacher_augs[1][1]),
-                            "Val Sample - Student Output Heatmap": student_img,
-                            "Val Sample - Teacher Output Heatmap": teacher_img,                          
-                            })     
+                            "Val Sample - Student Aug": wandb.Image(student_augs[v_idx][b_idx]),
+                            "Val Sample - Teacher Aug": wandb.Image(teacher_augs[v_idx][b_idx]),
+                            "Val Sample - Student Output Heatmap": wandb.Image(featuremap_to_heatmap(student_map)),
+                            "Val Sample - Teacher Output Heatmap": wandb.Image(featuremap_to_heatmap(teacher_map)),
+                        })
 
+                num_batches += 1
+
+            
         if not training:
             return epoch_val_loss / len(loader)
 
@@ -247,10 +233,11 @@ def main():
         print(f"Validation Cosine Similarity: {cos_sim:.4f}")
 
         # Save best model
-        if cos_sim > best_similarity:
-            best_similarity = cos_sim
-            torch.save(student.state_dict(), checkpoint_path)
-            print(f"Best model saved")
+        if epoch_idx>50:
+            if train_loss < best_loss:
+                best_loss = train_loss
+                torch.save(student.state_dict(), checkpoint_path)
+                print(f"Best model saved")
 
     wandb.finish()
 
