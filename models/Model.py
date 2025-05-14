@@ -71,7 +71,7 @@ class model_dice_bce(nn.Module):
             for param in self.encoder.parameters():
                 param.requires_grad = False  # ❄️ Freeze encoder weights
 
-        self.decoder          = decoder_function()
+        self.decoder       = decoder_function()
         self.head          = Head()
 
     def forward(self, inputs):                      # 1x  3 x 128 x 128

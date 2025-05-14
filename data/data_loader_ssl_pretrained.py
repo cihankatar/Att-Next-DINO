@@ -60,11 +60,22 @@ def loader(op,mode,sslmode,batch_size,num_workers,image_size,cutout_pr,cutout_bo
     if not mode == "ssl_pretrained":
 
         if op =="train":
-            train_im_path   = os.environ["ML_DATA_ROOT"]+foldernamepath+"train/images"   
-            train_mask_path = os.environ["ML_DATA_ROOT"]+foldernamepath+"train/masks"
-            
-            train_im_path   = sorted(glob(train_im_path+imageext))
-            train_mask_path = sorted(glob(train_mask_path+maskext))
+
+            # Load full training paths
+            train_im_path   = os.environ["ML_DATA_ROOT"] + foldernamepath + "train/images"
+            train_mask_path = os.environ["ML_DATA_ROOT"] + foldernamepath + "train/masks"
+
+            train_im_path   = sorted(glob(train_im_path + imageext))
+            train_mask_path = sorted(glob(train_mask_path + maskext))
+
+            # Shuffle and split
+            combined = list(zip(train_im_path, train_mask_path))
+            random.shuffle(combined)
+
+            split_index = int(len(combined) * split_ratio)
+            combined = combined[:split_index]
+
+            train_im_path, train_mask_path = zip(*combined)
         
         elif op == "validation":
             test_im_path    = os.environ["ML_DATA_ROOT"]+foldernamepath+"val/images"
